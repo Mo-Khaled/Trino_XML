@@ -1,0 +1,16 @@
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+
+# IDE and DBeaver workspace metadata
+.idea/
+.vscode/
+.dbeaver-data-sources.xml
+
+# Local and generated artifacts
+*.log
+*.bak
+.qa-artifacts/
+Thumbs.db
+.DS_Store
