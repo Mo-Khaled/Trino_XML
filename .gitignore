@@ -2,15 +2,38 @@
 .env
 .env.*
 !.env.example
+*.local.env
+
+# Machine-specific Docker Compose overrides
+docker-compose.override.yml
+docker-compose.*.local.yml
+
+# Local runtime data when bind mounts are used instead of named volumes
+oracle-data/
+trino-data/
 
 # IDE and DBeaver workspace metadata
 .idea/
 .vscode/
+.dbeaver/
 .dbeaver-data-sources.xml
+*.launch
 
-# Local and generated artifacts
+# Database exports, diagnostics, and generated artifacts
+*.dmp
+*.exp
+*.expdp
 *.log
 *.bak
+*.trc
+*.trm
+*.tmp
+*.swp
+*.swo
 .qa-artifacts/
+coverage/
+test-results/
+
+# Operating-system files
 Thumbs.db
 .DS_Store
