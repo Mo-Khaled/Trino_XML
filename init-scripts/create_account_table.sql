@@ -1,4 +1,5 @@
--- create_account_table.sql
+-- Run this in DBeaver using Execute SQL Script (Alt+X), not Execute SQL Statement.
+-- It recreates ACCOUNT and inserts the required source XML row for the bulk seed.
 BEGIN
   EXECUTE IMMEDIATE 'DROP TABLE account';
 EXCEPTION
@@ -15,7 +16,7 @@ CREATE TABLE account (
 INSERT INTO account (recid, xmlrecord, currency)
 VALUES (
   '9000000112345001',
-  XMLTYPE(TO_CLOB(q'{<row id="9000000112345001">
+  XMLTYPE(TO_CLOB(q'~<row id="9000000112345001">
   <c1>90000001</c1>
   <c2>6510</c2>
   <c3>عميل تجريبي مجهول</c3>
@@ -145,7 +146,7 @@ VALUES (
   <c50 m="5">20260331</c50>
   <c50 m="6">20260228</c50>
   <c50 m="7">20260131</c50>
-}') || q'{
+~') || q'~
   <c50 m="8">20251231</c50>
   <c50 m="9">20251130</c50>
   <c50 m="10">20251031</c50>
@@ -197,10 +198,11 @@ VALUES (
   <c252>EG0010039</c252>
   <c253>99</c253>
 </row>
-}')),
+~'),
   'EGP'
 );
 
 COMMIT;
 
-SELECT COUNT(*) FROM account;
+SELECT COUNT(*) AS account_row_count
+FROM account;
