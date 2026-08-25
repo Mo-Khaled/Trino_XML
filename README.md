@@ -124,7 +124,44 @@ The script is DBeaver-ready: execute it as an SQL script and do not add a
 standalone `/` delimiter. That delimiter is for SQL*Plus and causes Oracle
 error `ORA-00900` when DBeaver sends it as SQL.
 
-## 4. Test the supported behavior: `IGNORE`
+## 4. Materialize the Iceberg reporting model
+
+Set secure `MINIO_ROOT_USER` and `MINIO_ROOT_PASSWORD` values in `.env`, then
+start the full stack:
+
+```powershell
+docker compose up -d
+docker compose ps
+```
+
+In DBeaver's **Trino** editor, execute
+[`init-scripts/ingest_account_xml_to_iceberg.sql`](init-scripts/ingest_account_xml_to_iceberg.sql).
+The script reads Oracle only through `oracle.system.query`; it never creates or
+alters Oracle objects. It recreates the following Iceberg objects in the
+`iceberg.bronze` schema:
+
+| Object | Purpose |
+|---|---|
+| `account_xml_attributes` | One row for every XML element, retaining `field_index`, optional `m` index, and value. |
+| `account_field_lookup` | The 289 supplied mappings from XML index/index pair to field name. |
+| `account_xml_attributes_enriched` | View joining attributes to their specific lookup field names. |
+| `account_flat` | Small fixed set of common account fields. |
+| `account_wide` | One row per account with observed scalar fields as named columns and repeated XML fields as ordered arrays. |
+
+`account_wide` is the reporting table. Its repeated fields are arrays, so a
+field such as `c20` is represented by `c20_values` rather than many mostly-null
+columns. The primary XML value is first, followed by values ordered by `m`.
+
+```sql
+SELECT recid, account_title_1, c20_values, cap_date_charge_values
+FROM iceberg.bronze.account_wide
+LIMIT 5;
+```
+
+To refresh the Iceberg data after reseeding Oracle, run the ingestion script
+again. It drops and recreates only Iceberg tables and views.
+
+## 5. Test the supported behavior: `IGNORE`
 
 Open [`trino-catalog/oracle.properties`](trino-catalog/oracle.properties) and
 comment out this line if it is enabled:
@@ -157,7 +194,7 @@ Expected result:
 
 `IGNORE` is the supported configuration for excluding an unsupported column.
 
-## 5. Reproduce the `CONVERT_TO_VARCHAR` failure
+## 6. Reproduce the `CONVERT_TO_VARCHAR` failure
 
 In `trino-catalog/oracle.properties`, enable:
 
@@ -203,7 +240,7 @@ This succeeds because it does not read `xmlrecord`.
 When finished, comment out `CONVERT_TO_VARCHAR` and restart Trino to return
 to the supported `IGNORE` behavior.
 
-## 6. Read XML by converting it inside Oracle
+## 7. Read XML by converting it inside Oracle
 
 In the DBeaver **Trino** editor, use the Oracle connector passthrough table
 function. Oracle converts the `XMLTYPE` to `CLOB`; Trino receives that value
@@ -229,7 +266,7 @@ The following Oracle expression is also valid if it matches your existing SQL:
 a.xmlrecord.getClobVal() AS xml_text
 ```
 
-## 7. Recommended reusable interface: an Oracle view
+## 8. Recommended reusable interface: an Oracle view
 
 For ongoing use, create a view in the **Oracle** editor instead of embedding
 native SQL in every Trino query:
@@ -257,7 +294,7 @@ If Trino does not see the new view, run this in the Trino editor and retry:
 CALL oracle.system.flush_metadata_cache();
 ```
 
-## 8. Cleanup
+## 9. Cleanup
 
 Stop the containers but retain the seeded Oracle data:
 
