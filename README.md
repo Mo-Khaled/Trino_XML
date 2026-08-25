@@ -30,6 +30,8 @@ test fixture:
 |---|---:|---|
 | Oracle XE 21 | `1521` | Source database, PDB service `XEPDB1` |
 | Trino | `8080` | Query coordinator and Oracle catalog `oracle` |
+| MinIO | `9000` / `9001` | Local Iceberg object storage / console |
+| Iceberg REST | `8181` | Iceberg metadata catalog |
 
 The seeded `ACCOUNT` table has these columns:
 
