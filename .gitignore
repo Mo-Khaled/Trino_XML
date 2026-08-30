@@ -34,6 +34,10 @@ trino-data/
 coverage/
 test-results/
 
+# Python
+__pycache__/
+*.pyc
+
 # Operating-system files
 Thumbs.db
 .DS_Store

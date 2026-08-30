@@ -40,7 +40,7 @@ FROM TABLE(
       x.field_index,
       x.multi_value_index,
       x.field_value
-    FROM account a
+    FROM source_user.account a
     CROSS JOIN XMLTABLE(
       ''/row/*''
       PASSING a.xmlrecord
