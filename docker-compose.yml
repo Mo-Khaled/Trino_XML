@@ -78,9 +78,21 @@ services:
       CATALOG_IO__IMPL: org.apache.iceberg.aws.s3.S3FileIO
       CATALOG_S3_ENDPOINT: http://minio:9000
       CATALOG_S3_PATH-STYLE-ACCESS: "true"
+      # Default SQLite catalog has no busy_timeout, so any brief overlap on
+      # its single connection fails immediately with SQLITE_BUSY instead of
+      # waiting -- reproduced reliably on wide-schema (~290 column) table
+      # commits. journal_mode=WAL lets reads and writes coexist instead of
+      # blocking each other outright. Backed by a named volume (below) so a
+      # container recreate no longer silently loses the catalog's table
+      # registry -- previously this lived only in the container's ephemeral
+      # writable layer.
+      CATALOG_URI: "jdbc:sqlite:file:/var/iceberg-catalog/catalog.db?journal_mode=WAL&busy_timeout=30000"
     ports:
       - "8181:8181"
+    volumes:
+      - iceberg-catalog-data:/var/iceberg-catalog
 
 volumes:
   oracle-data:
   minio-data:
+  iceberg-catalog-data:

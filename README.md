@@ -4,9 +4,12 @@ This repository is a local Docker reference for reading T24-style Oracle
 `XMLTYPE` account records and publishing an Iceberg reporting model in Trino.
 
 Oracle is read-only during ingestion. XML parsing happens entirely in Trino
-(regex + array functions) — see [trino_parsing/README.md](trino_parsing/README.md)
-for the actual pipeline: how a table is generated, ingest/bootstrap/incremental/
-wide modes, and the querying/troubleshooting details specific to it.
+(regex + array functions), run as a dbt project — see
+[dbt/README.md](dbt/README.md) for the actual pipeline: `dbt run` /
+`dbt run-operation` / `dbt test`, and the querying/troubleshooting details
+specific to it. [trino_parsing/README.md](trino_parsing/README.md) documents
+the underlying parsing semantics (the `m`/`s` model, worked examples) that
+the dbt project is a 1:1 port of.
 
 ## Architecture
 
@@ -17,16 +20,17 @@ Oracle ACCOUNT (RECID, CURRENCY, XMLTYPE)
         v
 Trino (regex-tokenizes the XML text) -> Iceberg REST catalog + MinIO
         |
-        +-- account_raw          (raw XML text, landed once)
-        +-- account_attributes   (EAV: one row per tag occurrence)
-        +-- account_wide         (pivoted, named business columns)
-        +-- lookup_metadata      (tag -> business-field mapping)
+        +-- staging.account_raw          (raw XML text, landed once)
+        +-- staging.account_attributes   (EAV: one row per tag occurrence)
+        +-- bronze.account_wide          (pivoted, named business columns)
+        +-- bronze.lookup_metadata       (tag -> business-field mapping)
 ```
 
 `init-scripts/` only sets up the local Oracle fixture (`ACCOUNT` table +
 sample data) — it does not write anything to Iceberg. The actual XML-parsing
 pipeline, including how these tables are generated and kept up to date, lives
-entirely in `trino_parsing/`.
+in `dbt/` (current) and `trino_parsing/` (semantics reference / frozen SQL
+this was ported from).
 
 ## Services
 
@@ -120,21 +124,20 @@ The bulk seed skips its previously generated identifiers. Change
 
 ## Build and query the Iceberg model
 
-The ingest/bootstrap/incremental/wide pipeline, how it's generated, how to run
-it, and example queries all live in
-[trino_parsing/README.md](trino_parsing/README.md) — that document is the
-source of truth for the actual data pipeline; this file only covers getting
-the local Docker stack running.
+The pipeline (`dbt run` / `dbt run-operation` / `dbt test`), how to run it,
+and example queries all live in [dbt/README.md](dbt/README.md) — that
+document is the source of truth for the actual data pipeline; this file
+only covers getting the local Docker stack running.
 
 ## Operational boundaries
 
-- Oracle is read-only for every mode in the pipeline.
-- Ingestion is target-incremental: `ingest-refresh` stages a read from Oracle
+- Oracle is read-only for every step in the pipeline.
+- Ingestion is target-incremental: `account_raw` stages a read from Oracle
   (optionally windowed by `c167`), then merges changed records into Iceberg.
 - Oracle deletes are not inferred. Use a source tombstone or CDC feed before
   enabling delete propagation.
-- See `trino_parsing/README.md` for the specifics of watermarking, change
-  detection, and known risks against real production data.
+- See `dbt/README.md` for the specifics of watermarking, change detection,
+  and known risks against real production data.
 
 ## Troubleshooting
 
@@ -148,11 +151,12 @@ docker compose logs iceberg-rest
 docker compose logs minio
 ```
 
-If Trino cannot see the model, run `trino_parsing/sql/account/01_ingest_bootstrap.sql`
-and `03_bootstrap.sql` (see `trino_parsing/README.md`), then check:
+If Trino cannot see the model, run `dbt run --select account_raw account_attributes account_wide`
+(see `dbt/README.md`), then check:
 
 ```sql
 SHOW SCHEMAS FROM iceberg;
+SHOW TABLES FROM iceberg.staging;
 SHOW TABLES FROM iceberg.bronze;
 ```
 
@@ -189,9 +193,12 @@ init-scripts/
   create_account_table.sql             Local Oracle XMLTYPE fixture
   seed_account_xml_bulk.sql            Optional local bulk fixture
 trino_parsing/
-  gen_sql.py                           Generates the Trino SQL below
+  gen_sql.py                           Generates the Trino SQL below (frozen reference)
   sql/account/                         Checked-in generated SQL, run in DBeaver
-  README.md                            The actual pipeline: modes, workflow, queries
+  README.md                            Parsing semantics: m/s model, worked examples
+dbt/
+  models/, macros/                     The current pipeline: dbt run / run-operation / test
+  README.md                            How to run it -- start here for day-to-day use
 reference/
   account_xml_data_sample.xml          XML source sample
   account_oracle_schema.md             Source schema extract

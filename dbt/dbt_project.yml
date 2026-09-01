@@ -1,0 +1,33 @@
+name: xml_pipeline
+version: "1.0.0"
+config-version: 2
+profile: xml_pipeline
+
+model-paths: ["models"]
+macro-paths: ["macros"]
+seed-paths: ["seeds"]
+test-paths: ["tests"]
+clean-targets: ["target", "dbt_packages"]
+
+vars:
+  oracle_schema: source_user
+  watermark_field: c167
+  start_date: null
+  end_date: null
+
+models:
+  xml_pipeline:
+    staging:
+      +schema: staging
+      +materialized: incremental
+    bronze:
+      +schema: bronze
+      +materialized: incremental
+
+seeds:
+  xml_pipeline:
+    +schema: bronze
+    lookup_metadata:
+      +column_types:
+        m_index: integer
+        dt: date

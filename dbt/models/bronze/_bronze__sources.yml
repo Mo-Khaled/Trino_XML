@@ -1,0 +1,13 @@
+version: 2
+
+sources:
+  - name: bronze
+    database: iceberg
+    schema: bronze
+    tables:
+      - name: lookup_metadata
+        description: >
+          Tag -> business field mapping, externally/manually owned (not
+          created or loaded by this dbt project -- see dbt/README.md).
+          Columns: table_name, field_index, m_index (nullable, defaults to 1),
+          resolved_name_en (business column name), dt.

@@ -1,0 +1,23 @@
+version: 2
+
+models:
+  - name: customer_raw
+    description: >
+      Landed XML text from Oracle's CUSTOMER table, one row per recid.
+      Oracle does zero field-level work -- getClobVal() is a serialization
+      call. Deletes are not inferred (needs a source tombstone/CDC feed).
+    columns:
+      - name: recid
+        tests:
+          - unique
+          - not_null
+
+  - name: customer_attributes
+    description: >
+      EAV parse of customer_raw: one row per (recid, field_index, m_index,
+      s_index). No per-table codegen -- the schema never drifts regardless
+      of what lookup_metadata contains.
+    tests:
+      - lookup_coverage:
+          arguments:
+            table_name: customer
