@@ -75,6 +75,49 @@ which recids get replaced, so using the same window as the `incremental` run
 that fed it (or a wider one) is required, but getting it slightly wide is
 harmless — only genuinely different recids ever get touched.
 
+### Schema drift: a field that starts carrying real `s` sub-values
+
+`gen_sql.py --mode wide`/`wide-incremental` always pivot a lookup-pinned
+`(field_index, m_index)` as a single scalar value — that's fine until T24
+starts sending more than one `s` value for a position that used to only ever
+have one (e.g. `c11`/`m=1` had a single value for the first 10 batches, then
+batch 11 has two). At that point the column genuinely needs to become
+`ARRAY(VARCHAR)`, and the existing table's column has to be widened in
+place — this is the Trino port of `python_parsing.py`'s
+`reconcile_iceberg_schema()`/`_migrate_table_column()`.
+
+This can't be done from generated SQL text the way every other mode works,
+for the same reason Spark's version isn't a static query either: the
+decision (does this column need widening?) depends on live state — what
+today's batch actually contains, and what the table's column type currently
+is — inspected and acted on at run time. `trino_parsing/reconcile_wide_schema.py`
+is a live-connected script (needs `pip install trino`) instead of a text
+generator, run in place of `gen_sql.py --mode wide`/`wide-incremental`:
+
+```
+python reconcile_wide_schema.py --table account --apply bootstrap
+python reconcile_wide_schema.py --table account --apply incremental \
+  --start-date X --end-date Y
+```
+
+What it does, every run: pre-scans `account_attributes` for any lookup field
+whose `s_index` now exceeds 1 (mirrors `_detect_s_value_fields`); for any
+such field whose column is still `VARCHAR` in `<table>_wide`, runs the
+add/copy/drop/rename sequence to widen it to `ARRAY(VARCHAR)` (mirrors
+`_migrate_table_column`); then runs the pivot itself, building an ordered
+array from every `s` value for columns that need it and a plain scalar
+lookup for everything else. Only two shapes are possible here (`VARCHAR` or
+`ARRAY(VARCHAR)`), not Spark's three — every lookup row in this project is
+already pinned to one `m` (see `load_lookup_csv`), so there's no
+unpinned-`m` `ARRAY(ARRAY(VARCHAR))` case to begin with.
+
+Verified live: seeded a synthetic record with two `s` values for a
+previously-always-scalar field, ran `--apply incremental` — the column
+correctly migrated (`VARCHAR -> ARRAY(VARCHAR)`), the existing 10,001
+records' prior scalar values came through safely wrapped as single-element
+arrays (e.g. `[111]`, not lost or nulled), and the new record's two values
+landed correctly as an ordered array (`[AAA, BBB]`).
+
 `init-scripts/` only sets up the local Oracle fixture (`ACCOUNT` table +
 sample data) -- it never writes to Iceberg. `account_xml_attributes` and the
 other Oracle-`XMLTABLE`-built tables that used to live alongside this
