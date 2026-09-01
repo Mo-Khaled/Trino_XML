@@ -3,28 +3,30 @@
 This repository is a local Docker reference for reading T24-style Oracle
 `XMLTYPE` account records and publishing an Iceberg reporting model in Trino.
 
-Oracle is read-only during ingestion. Trino extracts XML with Oracle native
-SQL, writes Parquet-backed Iceberg tables to MinIO, and exposes business fields
-as columns in `iceberg.bronze.account_wide`.
+Oracle is read-only during ingestion. XML parsing happens entirely in Trino
+(regex + array functions) — see [trino_parsing/README.md](trino_parsing/README.md)
+for the actual pipeline: how a table is generated, ingest/bootstrap/incremental/
+wide modes, and the querying/troubleshooting details specific to it.
 
 ## Architecture
 
 ```text
 Oracle ACCOUNT (RECID, CURRENCY, XMLTYPE)
         |
-        | read-only XMLTABLE extraction through oracle.system.query
+        | getClobVal() passthrough -- Oracle does no field-level work
         v
-Trino -> Iceberg REST catalog + MinIO
+Trino (regex-tokenizes the XML text) -> Iceberg REST catalog + MinIO
         |
-        +-- account_xml_attributes
-        +-- account_field_lookup
-        +-- account_xml_attributes_enriched
-        +-- account_flat
-        +-- account_wide
+        +-- account_raw          (raw XML text, landed once)
+        +-- account_attributes   (EAV: one row per tag occurrence)
+        +-- account_wide         (pivoted, named business columns)
+        +-- lookup_metadata      (tag -> business-field mapping)
 ```
 
-`account_wide` is a physical Iceberg table with one row per account. Repeated
-XML fields are ordered arrays, avoiding mostly-null repeated columns.
+`init-scripts/` only sets up the local Oracle fixture (`ACCOUNT` table +
+sample data) — it does not write anything to Iceberg. The actual XML-parsing
+pipeline, including how these tables are generated and kept up to date, lives
+entirely in `trino_parsing/`.
 
 ## Services
 
@@ -116,93 +118,23 @@ database.
 The bulk seed skips its previously generated identifiers. Change
 `rows_to_insert` in that script to change the local fixture size.
 
-## Bootstrap the Iceberg model
+## Build and query the Iceberg model
 
-In the Trino editor, execute
-[ingest_account_xml_to_iceberg.sql](init-scripts/ingest_account_xml_to_iceberg.sql)
-once. This full bootstrap recreates the Iceberg reporting objects; it does not
-create, alter, or delete Oracle objects.
-
-| Object | Type | Purpose |
-|---|---|---|
-| `account_xml_attributes` | Iceberg table | One row per XML element with its index, optional `m` value, and value. |
-| `account_field_lookup` | Iceberg table | XML element/index to business-field mapping. |
-| `account_xml_attributes_enriched` | View | Attribute rows joined to their matching business name. |
-| `account_flat` | Iceberg table | Small fixed set of common account fields. |
-| `account_wide` | Iceberg table | Reporting table with named scalar columns and repeated-value arrays. |
-
-The bootstrap fixes the known Arabic fixture encoding only in Iceberg. Oracle
-source data is not changed.
-
-## Run the incremental load
-
-After bootstrap, execute
-[ingest_account_xml_incremental.sql](init-scripts/ingest_account_xml_incremental.sql)
-for normal loads.
-
-The script reads XML field `c167` as the source-updated date in `YYYYMMDD`
-format. It uses the maximum loaded date with a one-day overlap, merges changed
-attributes into `account_xml_attributes`, and rebuilds only changed rows in
-`account_flat` and `account_wide`.
-
-The first incremental run adds `source_updated_date` to the existing attribute
-table and populates it. Later runs are idempotent and safely reprocess the
-overlap window.
-
-## Query the reporting model
-
-Use `account_wide` for reporting:
-
-```sql
-SELECT
-  recid,
-  account_title_1,
-  date_last_update,
-  c20_values,
-  cap_date_charge_values
-FROM iceberg.bronze.account_wide
-ORDER BY recid
-LIMIT 10;
-```
-
-`c20_values` preserves XML order: the unindexed value comes first, followed by
-values ordered by their `m` attribute. This keeps the Arabic title inside the
-array instead of creating a sparse column.
-
-Inspect individual mapped attributes:
-
-```sql
-SELECT
-  recid,
-  field_index,
-  multi_value_index,
-  field_name,
-  field_value
-FROM iceberg.bronze.account_xml_attributes_enriched
-WHERE recid = '9000000112345001'
-ORDER BY field_index, multi_value_index;
-```
-
-Check the loaded watermark:
-
-```sql
-SELECT max(source_updated_date) AS loaded_through
-FROM iceberg.bronze.account_xml_attributes;
-```
+The ingest/bootstrap/incremental/wide pipeline, how it's generated, how to run
+it, and example queries all live in
+[trino_parsing/README.md](trino_parsing/README.md) — that document is the
+source of truth for the actual data pipeline; this file only covers getting
+the local Docker stack running.
 
 ## Operational boundaries
 
-- Oracle is read-only for both bootstrap and incremental ingestion.
-- The incremental script is target-incremental: it stages a complete Oracle
-  XML read, then filters and merges changed records in Iceberg.
-- To reduce Oracle read volume, an external scheduler must inject the saved
-  `c167` watermark into the read-only native Oracle query.
+- Oracle is read-only for every mode in the pipeline.
+- Ingestion is target-incremental: `ingest-refresh` stages a read from Oracle
+  (optionally windowed by `c167`), then merges changed records into Iceberg.
 - Oracle deletes are not inferred. Use a source tombstone or CDC feed before
   enabling delete propagation.
-- `c167` is date-granular; the one-day overlap is required for retries and
-  same-day changes.
-- Staging tables are Iceberg tables replaced on every incremental run and can
-  be inspected for diagnostics.
+- See `trino_parsing/README.md` for the specifics of watermarking, change
+  detection, and known risks against real production data.
 
 ## Troubleshooting
 
@@ -216,7 +148,8 @@ docker compose logs iceberg-rest
 docker compose logs minio
 ```
 
-If Trino cannot see the model, run the bootstrap script, then check:
+If Trino cannot see the model, run `trino_parsing/sql/account/01_ingest_bootstrap.sql`
+and `03_bootstrap.sql` (see `trino_parsing/README.md`), then check:
 
 ```sql
 SHOW SCHEMAS FROM iceberg;
@@ -230,8 +163,9 @@ docker compose restart trino
 ```
 
 For XML extraction failures, verify the Oracle account user can read `ACCOUNT`
-and each XML document has a `<row>` root element. The ingestion scripts use
-`oracle.system.query` and Oracle `XMLTABLE`, not direct Trino XMLTYPE mapping.
+and each XML document has a `<row>` root element. XML parsing happens in
+Trino itself via `getClobVal()` + regex tokenizing, not Oracle `XMLTABLE` —
+see `trino_parsing/README.md`.
 
 ## Stop or reset
 
@@ -254,8 +188,10 @@ docker compose down -v
 init-scripts/
   create_account_table.sql             Local Oracle XMLTYPE fixture
   seed_account_xml_bulk.sql            Optional local bulk fixture
-  ingest_account_xml_to_iceberg.sql    One-time Iceberg bootstrap
-  ingest_account_xml_incremental.sql   Normal target-incremental load
+trino_parsing/
+  gen_sql.py                           Generates the Trino SQL below
+  sql/account/                         Checked-in generated SQL, run in DBeaver
+  README.md                            The actual pipeline: modes, workflow, queries
 reference/
   account_xml_data_sample.xml          XML source sample
   account_oracle_schema.md             Source schema extract

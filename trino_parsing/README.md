@@ -43,6 +43,8 @@ and only inside the generated SQL itself, at query time.
 | `bootstrap` | First parse: `CREATE TABLE iceberg.bronze.<table>_attributes AS <tokenized>` |
 | `incremental` | Re-tokenize, delete+insert only recids whose `xml_hash` changed |
 | `reconcile` | Lookup-coverage report: tags present in the data with no lookup row |
+| `wide` | First pivot: `CREATE TABLE iceberg.bronze.<table>_wide` (named columns, from `--lookup`) |
+| `wide-incremental` | Re-pivot, delete+insert only recids whose `xml_hash` changed |
 
 ### End-to-end workflow
 
@@ -53,15 +55,31 @@ and only inside the generated SQL itself, at query time.
 2. gen_sql.py --mode bootstrap    --table account > sql/account/03_bootstrap.sql
    (run in DBeaver)
 
-3. Cross-check iceberg.bronze.account_attributes against the existing
-   iceberg.bronze.account_xml_attributes (built by init-scripts/ via Oracle
-   XMLTABLE) for the same recids -- the two pipelines should agree.
+3. gen_sql.py --mode wide         --table account --lookup <CSV export of
+     lookup_metadata> > sql/account/06_wide.sql
+   (run in DBeaver; pivots account_attributes into named business columns)
 
-4. Ongoing refresh (run daily with that day's window, e.g. from a scheduler):
-   gen_sql.py --mode ingest-refresh --table account \
-     --start-date 20260829 --end-date 20260830
-   gen_sql.py --mode incremental    --table account
+4. Ongoing refresh (run daily with that day's window, e.g. from an Airflow DAG):
+   gen_sql.py --mode ingest-refresh    --table account --start-date X --end-date Y
+   gen_sql.py --mode incremental       --table account --start-date X --end-date Y
+   gen_sql.py --mode wide-incremental  --table account --start-date X --end-date Y \
+     --lookup <fresh CSV export of lookup_metadata>
 ```
+
+`wide-incremental` windows its source scan by `account_attributes.ingested_at`
+— which `incremental` only ever bumps for recids it actually changed — so it
+never has to re-pivot the whole table. Like `incremental`, the window is an
+optimization on what gets re-pivoted, not the correctness check: comparing
+`xml_hash` against what's already in `<table>_wide` is what actually decides
+which recids get replaced, so using the same window as the `incremental` run
+that fed it (or a wider one) is required, but getting it slightly wide is
+harmless — only genuinely different recids ever get touched.
+
+`init-scripts/` only sets up the local Oracle fixture (`ACCOUNT` table +
+sample data) -- it never writes to Iceberg. `account_xml_attributes` and the
+other Oracle-`XMLTABLE`-built tables that used to live alongside this
+pipeline have been removed; this pipeline's tables (`account_raw`,
+`account_attributes`, `account_wide`) are the only ones now.
 
 There is no `discover` step and no `--fields-with-s` flag. Those existed
 only to decide, ahead of generation, between two possible column shapes for
