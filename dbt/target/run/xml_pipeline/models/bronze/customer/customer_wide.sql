@@ -1,4 +1,12 @@
 
+  
+    
+
+    create table "iceberg"."bronze"."customer_wide"
+      
+      
+    as (
+      
 
 
 WITH grouped AS (
@@ -23,3 +31,6 @@ SELECT
   xml_hash,
   current_timestamp AS ingested_at
 FROM grouped
+    );
+
+  

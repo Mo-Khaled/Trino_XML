@@ -18,15 +18,77 @@ time by a macro that queries the live `lookup_metadata` source (see
 files" step entirely.
 
 **One piece deliberately stays outside dbt's model layer**: schema widening (a field
-that starts carrying real `s` sub-values needs its `account_wide` column migrated
-`VARCHAR` → `ARRAY(VARCHAR)`). That's imperative, conditional DDL — `ADD COLUMN` →
-`UPDATE` → `DROP COLUMN` → `RENAME COLUMN` — decided by comparing live batch shapes
-against the table's current physical schema. dbt's only built-in answer to a changed
-column type is `--full-refresh` (rebuild the whole table), which would force
-reprocessing all of `account_attributes` on every widening event and defeat the
+that starts carrying a wider shape than its `account_wide` column currently holds
+needs that column migrated in place). That's imperative, conditional DDL — `ADD
+COLUMN` → `UPDATE` → `DROP COLUMN` → `RENAME COLUMN` — decided by comparing live
+batch shapes against the table's current physical schema. dbt's only built-in answer
+to a changed column type is `--full-refresh` (rebuild the whole table), which would
+force reprocessing all of `account_attributes` on every widening event and defeat the
 whole point of windowed incremental processing. So it's a `run-operation`
 (`macros/reconcile_wide_schema.sql`) — a real, separate, individually-loggable step,
 not hidden inside a model hook.
+
+## Matching `python_parsing.py` exactly: unpinned `m_index`, and stale columns
+
+Earlier versions of this pipeline coalesced every lookup row's blank `m_index` to
+`1` — meaning a field with no pinned `m_index` only ever surfaced its *first*
+occurrence in `account_wide`, silently dropping any later `m`-group. That diverged
+from `python_parsing.py`'s actual semantics: a lookup row with no `m_index` means
+"give me every `m`-group occurrence for this field," which Spark represents as
+either a flat array (one value per `m`-group) or, when real `s` sub-values also
+appear, a nested array (outer index = `m`-group, inner index = `s`-slot within it).
+This mattered a lot in practice — **255 of the 289 current `account` lookup rows
+have a blank `m_index`** — and reconciling against real data during this fix found
+9 fields (`inputter`, `date_time`, `alt_acct_id`, ...) that had always carried a
+second `m`-group occurrence, silently truncated by the old logic.
+
+`macros/get_wide_select.sql` now implements all three of `_build_select_expressions()`'s
+branches:
+- **Branch 1** (`m_index` pinned) — unchanged: `element_at(f, 'tag_m')` scalar, or
+  the `s`-indexed array, exactly as before.
+- **Branch 2** (`m_index` unpinned, real `s`-values present) — `wide_branch2_expr()`:
+  `ARRAY(ARRAY(VARCHAR))`, outer array over `m`-groups, inner array over `s`-slots.
+  Reads from a third pivot map, `h` (`wide_pivot_cte()`), keyed by tag alone —
+  every `(m, s, value)` triple for that field, since Branch 1's `f`/`g` maps (keyed
+  by `tag_m`) can't represent "every `m`-group" for an unpinned field.
+- **Branch 3** (`m_index` unpinned, no `s`-values) — `wide_branch3_array_expr()`:
+  flat `ARRAY(VARCHAR)`, one value per `m`-group. Can still collapse to a plain
+  scalar (`wide_branch3_scalar_expr()`) when every record in the batch only ever
+  has one `m`-group for that field — mirroring `normalize_arrays()`'s single-element
+  flatten, including its edge case: the collapse is `element_at()` of position 1 of
+  the full array, so if a record's one-and-only occurrence isn't at `m=1`, the
+  scalar comes back `NULL` rather than that value. T24's own convention (omit `m`
+  entirely on a first/only occurrence, which the tokenizer already defaults to `1`)
+  means this shouldn't bite in practice — it's called out here because it's a
+  faithful port of Spark's actual behavior, not something invented for this port.
+
+Which shape (`scalar`/`array`/`nested`) each column currently needs — and which
+migration path to take when it needs to widen — is decided by
+`macros/get_column_shapes.sql` and `reconcile_wide_schema`'s extended
+`migrate_wide_column()`, which now covers all three of `reconcile_iceberg_schema()`'s
+real migration cases: `scalar → array`, `scalar → nested`, and `array → nested`
+(the fourth-through-sixth cases in the Spark reference — DataFrame narrower than the
+table — don't need separate handling here, same as before: `get_wide_select` always
+builds the expression matching the column's *current physical* shape, which already
+produces the wider form Spark's Cases D/E/F would otherwise wrap into).
+
+**Step 1 of `reconcile_iceberg_schema()`** (a column exists in the table but no
+longer has a matching lookup row — renamed or removed from `lookup_metadata`) is
+now handled explicitly too, via `get_stale_columns()`: rather than just omitting
+such a column from the `SELECT` (which would still work — Trino's
+`INSERT INTO target (subset of cols)` leaves the rest untouched on unaffected rows
+and `NULL` on new/changed ones — but isn't what Spark's code actually does), every
+stale column gets an explicit fill matching `reconcile_iceberg_schema()` exactly:
+`NULL` for a scalar column, an empty array for an array-or-nested one
+(`F.lit(None)` vs `F.array()` in the Spark reference).
+
+Both were verified live against `account`: the 9 real fields above correctly
+widened `scalar → array` with all prior values preserved; a synthetic record with
+genuine multi-`m`/multi-`s` values correctly produced nested arrays matching
+Spark's own worked example shape (`[['IN','PR','PE'], ...]`); a synthetic stale
+column with existing data on every row was correctly wiped (`NULL`/`[]`) only on
+the one row that got recomputed, leaving the other 10,000 rows' stale value
+untouched.
 
 ## Setup
 

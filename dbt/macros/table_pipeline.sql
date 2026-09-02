@@ -98,8 +98,9 @@ WHERE tag != '__empty__'
 
 {%- set attrs_relation = ref(table_name ~ '_attributes') -%}
 {%- set lookup_rows = get_lookup_rows(table_name) -%}
-{%- set array_cols = get_array_columns(lookup_rows, attrs_relation, this) -%}
-{%- set select_result = get_wide_select(lookup_rows, array_cols, watermark_field) -%}
+{%- set shapes = get_column_shapes(lookup_rows, attrs_relation, this) -%}
+{%- set stale_columns = get_stale_columns(lookup_rows, this) -%}
+{%- set select_result = get_wide_select(lookup_rows, shapes, stale_columns, watermark_field) -%}
 {%- set columns_sql = select_result[0] -%}
 
 {%- set target_exists = is_incremental() -%}
