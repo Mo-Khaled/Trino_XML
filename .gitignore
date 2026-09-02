@@ -38,6 +38,13 @@ test-results/
 __pycache__/
 *.pyc
 
+# local_parsing runner: vendored jars + Spark scratch (not committed)
+local_parsing/jars/
+local_parsing/.ivy2/
+local_parsing/spark-warehouse/
+local_parsing/metastore_db/
+local_parsing/derby.log
+
 # Operating-system files
 Thumbs.db
 .DS_Store

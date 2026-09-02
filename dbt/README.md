@@ -186,7 +186,7 @@ build regardless of vars. To force a full rebuild later, use `--full-refresh`.
   on the same calendar day (day-granularity windowing can't tell them apart).
   Reproduced and fixed during validation; see the model files' comments.
 - **`account_wide`'s array-vs-scalar column decision is read-only within the
-  model.** `macros/get_array_columns.sql` trusts `account_wide`'s *physical*
+  model.** `macros/get_column_shapes.sql` trusts `account_wide`'s *physical*
   column types via `information_schema` when the table already exists — it does
   **not** re-derive "does this need widening." That decision lives in exactly one
   place, the `reconcile_wide_schema` run-operation. Skipping step 2 above before
@@ -233,35 +233,33 @@ already-verified numbers exactly:
 
 ## Not yet done
 
-- Only `account` is onboarded. `models/staging/account_raw.sql`,
-  `account_attributes.sql`, and `models/bronze/account_wide.sql` are
-  each just `config(...)` plus one argument-free macro call —
-  `raw_ingest_model()` / `attributes_model()` / `wide_model()`
-  (`macros/table_pipeline.sql`). These macros take no `table_name` argument
-  on purpose: they derive it from the model's own filename (`model.name`,
-  stripping the known `_raw`/`_attributes`/`_wide` suffix) instead of taking
-  it as a string argument. That's deliberate — with an argument, table
-  identity would have to be typed correctly in two places (the filename
-  *and* the argument), and a copy-pasted file that gets renamed but keeps a
-  stale argument would silently build a table with the right name and the
-  wrong data. With zero arguments there's exactly one place to get it right:
-  the filename, which is what determines the resulting table name anyway.
-  Onboarding a new table (there are 100+ in the source database) is:
-  confirm `lookup_metadata` has rows for that `table_name`, then add three
-  correctly-*named* one-line model files directly under `models/staging/`
-  (`<table>_raw.sql`, `<table>_attributes.sql`) and `models/bronze/`
-  (`<table>_wide.sql`) — no per-table subfolder; with each file now just
-  two lines, a subfolder per table added nesting without payoff, and the
-  filenames already sort together by table prefix in one flat directory.
-  Each new file is just `config(...)` + the matching macro call, plus a
-  schema `.yml` (copy `account__models.yml`) and the two raw-layer tests
-  (copy `tests/account_raw_*.sql`, swap the `ref()`s). No macro changes needed —
+- Only `account` (and an empty-lookup `customer` scaffold) is onboarded.
+  `models/staging/account/account_raw.sql`, `account_attributes.sql`, and
+  `models/bronze/account/account_wide.sql` are each just `config(...)` plus
+  one argument-free macro call — `raw_ingest_model()` / `attributes_model()`
+  / `wide_model()` (`macros/table_pipeline.sql`). These macros take no
+  `table_name` argument on purpose: they derive it from the model's own
+  filename (`model.name`, stripping the known `_raw`/`_attributes`/`_wide`
+  suffix) instead of taking it as a string argument. That's deliberate —
+  with an argument, table identity would have to be typed correctly in two
+  places (the filename *and* the argument), and a copy-pasted file that
+  gets renamed but keeps a stale argument would silently build a table with
+  the right name and the wrong data. With zero arguments there's exactly one
+  place to get it right: the filename, which is what determines the
+  resulting table name anyway. Onboarding a new table (there are 100+ in
+  the source database) is: confirm `lookup_metadata` has rows for that
+  `table_name`, then add three correctly-*named* one-line model files under
+  `models/staging/<table>/` (`<table>_raw.sql`, `<table>_attributes.sql`)
+  and `models/bronze/<table>/` (`<table>_wide.sql`). Each new file is just
+  `config(...)` + the matching macro call, plus a schema `.yml` (copy
+  `account/account__models.yml`) and the two raw-layer tests (copy
+  `tests/account_raw_*.sql`, swap the `ref()`s). No macro changes needed —
   `table_pipeline.sql`'s macros and everything they call (`token_ctes`,
-  `get_lookup_rows`, `get_array_columns`, `get_wide_select`,
-  `reconcile_wide_schema`) already take the table name/relation as an
-  argument (or derive it, for these three). At 100+ tables, generating
-  those files with a small script (instead of hand-copying each) is worth
-  building.
+  `get_lookup_rows`, `get_column_shapes`, `get_stale_columns`,
+  `get_wide_select`, `reconcile_wide_schema`) already take the table
+  name/relation as an argument (or derive it, for these three). At 100+
+  tables, generating those files with a small script (instead of
+  hand-copying each) is worth building.
 - No Airflow DAG yet — the 4-step sequence above is what a DAG's tasks would
   run, in that order.
 - `trino_parsing/`'s `gen_sql.py`-generated `.sql` files and
