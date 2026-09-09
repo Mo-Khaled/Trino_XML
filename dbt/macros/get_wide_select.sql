@@ -1,31 +1,3 @@
-{#
-  Per-column pivot expressions -- 1:1 port of python_parsing.py's
-  _build_select_expressions()'s three branches, plus normalize_arrays()'s
-  scalar collapse. Which branch a lookup row uses is decided by whether its
-  m_index is pinned (Branch 1) or not (Branch 2/3); which of Branch 2 vs 3
-  applies, and whether a column collapses to scalar, is decided by
-  get_column_shapes.sql -- these macros only render the expression for a
-  shape that's already been decided.
-
-  Branch 1 (m pinned)     -- element_at(f, 'tag_m') scalar, or the s-indexed
-                              array built from g, exactly as before.
-  Branch 2 (m unpinned,    -- ARRAY(ARRAY(VARCHAR)): outer index = m-group,
-    has real s-values)        inner index = s-slot within that m-group.
-                               Mirrors _build_select_expressions()'s Branch 2
-                               exactly, including the sparse-m-group guard
-                               (T24 can skip an m-group entirely; sequence(1,0)
-                               throws in Trino, hence the cardinality check).
-  Branch 3 (m unpinned,    -- ARRAY(VARCHAR): one value per m-group. Can
-    no real s-values)         still collapse to scalar if every record's
-                               batch never has more than one m-group for
-                               that field (mirrors normalize_arrays()'s
-                               single-element-array flatten) -- the scalar
-                               form is literally element_at() of the array
-                               form, same two-pass shape Spark uses
-                               (_build_select_expressions builds the array,
-                               normalize_arrays may then collapse it),
-                               including its edge cases.
-#}
 
 {% macro wide_scalar_expr(tag, m) -%}
 element_at(f, '{{ tag }}_{{ m }}')

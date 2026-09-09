@@ -10,7 +10,9 @@ test-paths: ["tests"]
 clean-targets: ["target", "dbt_packages"]
 
 vars:
-  oracle_schema: source_user
+  # Owner of the Oracle source tables. Read from the shell env (load the repo
+  # root .env first -- see dbt/README.md); falls back to source_user.
+  oracle_schema: "{{ env_var('ORACLE_SCHEMA', 'source_user') }}"
   watermark_field: c167
   start_date: null
   end_date: null

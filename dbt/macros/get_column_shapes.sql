@@ -1,25 +1,4 @@
-{#
-  Decides the pivot shape -- 'scalar' | 'array' | 'nested' -- for every
-  current lookup row. Mirrors python_parsing.py's two-stage decision:
-  _detect_s_value_fields() (which no-m_index fields need
-  ARRAY<ARRAY<STRING>>) plus normalize_arrays() (does a flat array collapse
-  to a scalar). 'nested' means ARRAY(ARRAY(VARCHAR)) (Spark's Branch 2 --
-  unpinned m, real s-values seen); 'array' means ARRAY(VARCHAR) (Branch 1
-  with s>1, or Branch 3 with >1 m-group seen); 'scalar' means plain VARCHAR.
 
-  If wide_relation already exists, trusts its PHYSICAL column types via
-  information_schema -- because the reconcile_wide_schema run-operation is
-  expected to have already committed any needed ALTER TABLE widening before
-  this model runs (see macros/reconcile_wide_schema.sql). This macro
-  deliberately does NOT re-derive "does this need widening" on its own for
-  that case -- detection logic lives in exactly one place (the
-  run-operation), so a skipped run-operation step surfaces as a real
-  TYPE_MISMATCH error instead of silently mis-typing data.
-
-  If wide_relation does not exist yet (bootstrap / --full-refresh), derives
-  shapes straight from the batch, identical to reconcile_wide_schema's own
-  bootstrap branch.
-#}
 {% macro get_column_shapes(rows, source_relation, wide_relation) %}
   {% set existing = load_relation(wide_relation) %}
   {% set shapes = {} %}

@@ -1,11 +1,14 @@
--- Run this in DBeaver using Execute SQL Script (Alt+X), not Execute SQL Statement.
--- It recreates ACCOUNT and inserts the required source XML row for the bulk seed.
+-- Recreates ACCOUNT and inserts the source XML row the bulk seed clones from.
+-- Objects are created UNQUALIFIED, so they land in whatever schema runs this:
+--   * auto path  -- init-scripts/00_setup.sh runs it as ${ORACLE_SCHEMA}
+--   * manual path -- connect to DBeaver as that same user, Execute SQL Script (Alt+X)
 BEGIN
   EXECUTE IMMEDIATE 'DROP TABLE account';
 EXCEPTION
   WHEN OTHERS THEN
     IF SQLCODE != -942 THEN RAISE; END IF;
 END;
+/
 
 CREATE TABLE account (
   recid      VARCHAR2(255) NOT NULL PRIMARY KEY,

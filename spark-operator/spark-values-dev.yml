@@ -1,0 +1,207 @@
+crd:
+  enable: true
+  forceUpdate: true
+
+certManager:
+  duration: ""
+  enable: false
+  issuerRef: {}
+  renewBefore: ""
+commonLabels: {}
+controller:
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1001
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 1001  
+  podAnnotations: {}
+  affinity: {}
+  annotations: {}
+  batchScheduler:
+    default: ""
+    enable: false
+    kubeSchedulerNames: []
+  driverPodCreationGracePeriod: 10s
+  env:
+    # Fix for IOException: Canceled - extend Kubernetes client timeouts
+    # and disable HTTP connection keep-alive to prevent stale connections
+    - name: KUBERNETES_REQUEST_TIMEOUT
+      value: "120000"  # 2 minutes in milliseconds
+    - name: KUBERNETES_CONNECTION_TIMEOUT
+      value: "60000"   # 1 minute in milliseconds
+    - name: KUBERNETES_WEBSOCKET_TIMEOUT
+      value: "120000"  # 2 minutes
+    # Disable HTTP keep-alive to prevent stale connection pool issues
+    - name: JAVA_TOOL_OPTIONS
+      value: "-Dhttp.keepAlive=false -Dsun.net.http.allowRestrictedHeaders=true"
+  envFrom: []
+  labels: {}
+  leaderElection:
+    enable: false
+  logLevel: info
+  maxTrackedExecutorPerApp: 1000
+  nodeSelector: {}
+  podDisruptionBudget:
+    enable: false
+    minAvailable: 1
+  pprof:
+    enable: false
+    port: 6060
+    portName: pprof
+  priorityClassName: ""
+  rbac:
+    annotations: {}
+    create: true
+    rules:
+      - verbs: [get, list, watch, create, update, patch, delete, deletecollection]
+        apiGroups: ['']
+        resources: [pods, configmaps, services, persistentvolumeclaims]
+      - verbs: [create, update, patch]
+        apiGroups: ['']
+        resources: [events]
+      - verbs: [get, create, delete, list, watch]
+        apiGroups: [extensions, networking.k8s.io]
+        resources: [ingresses]
+      - verbs: [get, list, watch, create, update, patch, delete]
+        apiGroups: [sparkoperator.k8s.io]
+        resources: [sparkapplications, scheduledsparkapplications]
+      - verbs: [get, update, patch]
+        apiGroups: [sparkoperator.k8s.io]
+        resources: [sparkapplications/status, sparkapplications/finalizers, scheduledsparkapplications/status, scheduledsparkapplications/finalizers]
+  replicas: 1
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 1000m
+      memory: 4Gi
+  serviceAccount:
+    annotations: {}
+    automountServiceAccountToken: true
+    create: true
+    name: "spark-operator-controller"
+  sidecars: []
+  tolerations: []
+  topologySpreadConstraints: []
+  uiIngress:
+    # -- Specifies whether to create ingress for Spark web UI.
+    # `controller.uiService.enable` must be `true` to enable ingress.
+    enable: true
+    # -- Ingress URL format.
+    # Required if `controller.uiIngress.enable` is true.
+    urlFormat: "{{$appNamespace}}-{{$appName}}.apps.dev-ocp-01.scb.local"
+    # -- Optionally set the ingressClassName.
+    ingressClassName: openshift-default
+  uiService:
+    enable: true
+  volumeMounts:
+  - mountPath: /tmp
+    name: tmp
+    readOnly: false
+  volumes:
+  - emptyDir:
+      sizeLimit: 1Gi
+    name: tmp
+  workers: 10
+  workqueueRateLimiter:
+    bucketQPS: 50
+    bucketSize: 500
+    maxDelay:
+      duration: 6h
+      enable: true
+fullnameOverride: ""
+image:
+  pullPolicy: IfNotPresent
+  pullSecrets: []
+  registry: scb-quay-quay-enterprise.apps.ocp-hub.scb.local
+  repository: scbhq/spark-operator/controller
+  tag: "2.4.0"
+nameOverride: ""
+prometheus:
+  metrics:
+    enable: true
+    endpoint: /metrics
+    jobStartLatencyBuckets: 30,60,90,120,150,180,210,240,270,300
+    port: 8080
+    portName: metrics
+    prefix: ""
+  podMonitor:
+    create: false
+    jobLabel: spark-operator-podmonitor
+    labels: {}
+    podMetricsEndpoint:
+      interval: 5s
+      scheme: http
+      
+spark:
+  jobNamespaces:
+  - spark-dev
+  - spark-ai
+  rbac:
+    annotations: {}
+    create: true
+  serviceAccount:
+    annotations: {}
+    automountServiceAccountToken: true
+    create: true
+    name: "spark-operator"
+webhook:
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1001
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 1001
+  serviceAccount:
+    annotations: {}
+    automountServiceAccountToken: true
+    create: true
+    name: "spark-operator-webhook"
+
+  podAnnotations: {}
+
+  affinity: {}
+  annotations: {}
+  enable: true
+  env: []
+  envFrom: []
+  failurePolicy: Fail
+  labels: {}
+  leaderElection:
+    enable: false
+  logLevel: info
+  nodeSelector: {}
+  podDisruptionBudget:
+    enable: false
+    minAvailable: 1
+  port: 9443
+  portName: webhook
+  priorityClassName: ""
+  rbac:
+    annotations: {}
+    create: true
+  replicas: 1
+  resourceQuotaEnforcement:
+    enable: false
+  resources: 
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+  sidecars: []
+  timeoutSeconds: 10
+  tolerations: []
+  topologySpreadConstraints: []
+  volumeMounts:
+  - mountPath: /etc/k8s-webhook-server/serving-certs
+    name: serving-certs
+    readOnly: false
+    subPath: serving-certs
+  volumes:
+  - emptyDir:
+      sizeLimit: 500Mi
+    name: serving-certs

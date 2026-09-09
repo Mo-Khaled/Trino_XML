@@ -4,12 +4,22 @@ services:
     container_name: oracle-xe
     environment:
       ORACLE_PASSWORD: ${ORACLE_PASSWORD:?Set ORACLE_PASSWORD in .env}
-      APP_USER: ${ORACLE_APP_USER:?Set ORACLE_APP_USER in .env}
-      APP_USER_PASSWORD: ${ORACLE_APP_PASSWORD:?Set ORACLE_APP_PASSWORD in .env}
+      # Consumed by init-scripts/00_setup.sh (auto-run once on a fresh DB). It
+      # creates ORACLE_SCHEMA as the owning user, loads the fixture into it,
+      # optionally creates ORACLE_APP_USER, and GRANTs SELECT to PUBLIC.
+      # gvenzl's own APP_USER/APP_USER_PASSWORD are intentionally NOT set --
+      # 00_setup.sh does all user creation so ORACLE_APP_USER=system can't
+      # trigger a "CREATE USER system" failure.
+      ORACLE_SCHEMA: ${ORACLE_SCHEMA:-source_table}
+      ORACLE_SCHEMA_PASSWORD: ${ORACLE_SCHEMA_PASSWORD:-source_table}
+      ORACLE_APP_USER: ${ORACLE_APP_USER:-system}
+      ORACLE_APP_PASSWORD: ${ORACLE_APP_PASSWORD:-oracle}
     ports:
       - "1521:1521"
     volumes:
       - oracle-data:/opt/oracle/oradata
+      - ./init-scripts/00_setup.sh:/container-entrypoint-initdb.d/00_setup.sh:ro
+      - ./init-scripts:/opt/fixtures:ro
     healthcheck:
       test: ["CMD", "healthcheck.sh"]
       interval: 10s
@@ -64,12 +74,31 @@ services:
       "mc alias set local http://minio:9000 $${MINIO_ROOT_USER} $${MINIO_ROOT_PASSWORD}
       && mc mb --ignore-existing local/warehouse"
 
+  iceberg-catalog-db:
+    image: postgres:16
+    container_name: iceberg-catalog-db
+    environment:
+      POSTGRES_USER: ${ICEBERG_CATALOG_DB_USER:-iceberg}
+      POSTGRES_PASSWORD: ${ICEBERG_CATALOG_DB_PASSWORD:-iceberg}
+      POSTGRES_DB: ${ICEBERG_CATALOG_DB_NAME:-iceberg_catalog}
+    ports:
+      - "5433:5432"          # 5433 on the host so it can't clash with a local Postgres
+    volumes:
+      - iceberg-catalog-pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${ICEBERG_CATALOG_DB_USER:-iceberg} -d ${ICEBERG_CATALOG_DB_NAME:-iceberg_catalog}"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+
   iceberg-rest:
     image: tabulario/iceberg-rest:1.6.0
     container_name: iceberg-rest
     depends_on:
       minio-bootstrap:
         condition: service_completed_successfully
+      iceberg-catalog-db:
+        condition: service_healthy
     environment:
       AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:?Set MINIO_ROOT_USER in .env}
       AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:?Set MINIO_ROOT_PASSWORD in .env}
@@ -78,21 +107,22 @@ services:
       CATALOG_IO__IMPL: org.apache.iceberg.aws.s3.S3FileIO
       CATALOG_S3_ENDPOINT: http://minio:9000
       CATALOG_S3_PATH-STYLE-ACCESS: "true"
-      # Default SQLite catalog has no busy_timeout, so any brief overlap on
-      # its single connection fails immediately with SQLITE_BUSY instead of
-      # waiting -- reproduced reliably on wide-schema (~290 column) table
-      # commits. journal_mode=WAL lets reads and writes coexist instead of
-      # blocking each other outright. Backed by a named volume (below) so a
-      # container recreate no longer silently loses the catalog's table
-      # registry -- previously this lived only in the container's ephemeral
-      # writable layer.
-      CATALOG_URI: "jdbc:sqlite:file:/var/iceberg-catalog/catalog.db?journal_mode=WAL&busy_timeout=30000"
+      # Catalog registry (table name -> current metadata.json pointer) lives in
+      # the Postgres service above so it can be queried directly:
+      #   psql "postgresql://iceberg:iceberg@localhost:5433/iceberg_catalog"
+      #   SELECT table_namespace, table_name, metadata_location FROM iceberg_tables;
+      # The JDBC catalog auto-creates iceberg_tables / iceberg_namespace_properties
+      # on first use. Data + Iceberg metadata files still live in MinIO.
+      # NOTE: switching backends does not migrate the old SQLite registry -- the
+      # new Postgres catalog starts empty; re-create tables or CALL system.register_table.
+      # CATALOG_* -> Iceberg property: lowercase, '_'->'.', '__'->'-'.
+      CATALOG_URI: jdbc:postgresql://iceberg-catalog-db:5432/${ICEBERG_CATALOG_DB_NAME:-iceberg_catalog}
+      CATALOG_JDBC_USER: ${ICEBERG_CATALOG_DB_USER:-iceberg}
+      CATALOG_JDBC_PASSWORD: ${ICEBERG_CATALOG_DB_PASSWORD:-iceberg}
     ports:
       - "8181:8181"
-    volumes:
-      - iceberg-catalog-data:/var/iceberg-catalog
 
 volumes:
   oracle-data:
   minio-data:
-  iceberg-catalog-data:
+  iceberg-catalog-pg:

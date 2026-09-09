@@ -57,11 +57,22 @@ Copy-Item .env.example .env
 
 | Variable | Used by |
 |---|---|
-| `ORACLE_PASSWORD` | Oracle XE administrator setup. |
-| `ORACLE_APP_USER` | Oracle application user and Trino Oracle connector. |
-| `ORACLE_APP_PASSWORD` | Oracle application user and Trino Oracle connector. |
+| `ORACLE_PASSWORD` | Oracle XE administrator (`SYSTEM`) password. |
+| `ORACLE_SCHEMA` | Schema that owns the source tables; `init-scripts/00_setup.sh` creates it and loads the fixture into it. Also read by dbt and `local_parsing/`. |
+| `ORACLE_SCHEMA_PASSWORD` | Password for `ORACLE_SCHEMA`. |
+| `ORACLE_APP_USER` | Identity Trino + `local_parsing/` connect to Oracle as (`system` works as-is; a custom name is created by `00_setup.sh`). |
+| `ORACLE_APP_PASSWORD` | Password for `ORACLE_APP_USER`. |
 | `MINIO_ROOT_USER` | MinIO, Iceberg REST, and Trino Iceberg connector. |
 | `MINIO_ROOT_PASSWORD` | MinIO, Iceberg REST, and Trino Iceberg connector. |
+| `ICEBERG_CATALOG_DB_*` | Optional — Postgres backing the Iceberg REST catalog (defaults `iceberg`/`iceberg`/`iceberg_catalog`). |
+| `TRINO_HOST` / `TRINO_PORT` | dbt's Trino connection (host-side). |
+| `ORACLE_HOST` / `ORACLE_PORT` / `ORACLE_SERVICE`, `ICEBERG_REST_URI`, `ICEBERG_WAREHOUSE`, `MINIO_ENDPOINT`, `AWS_REGION` | Endpoints — default to the local stack; override for another environment. Read by dbt and `local_parsing/`. |
+| `SPARK_LOCAL_IP`, `PYSPARK_SUBMIT_ARGS` | `local_parsing/` local-run conveniences (both jobs) — driver address + heap; `run_parsing.py` drops them for a cluster. |
+| `SPARK_MASTER`, `SPARK_EXECUTOR_*`, `SPARK_JDBC_NUM_PARTITIONS` | `local_parsing/`'s **HISTORY** backfill job only — cluster address + sizing. See [local_parsing/README.md](local_parsing/README.md). |
+
+`.env` is grouped into sections (Oracle / object store / dbt / Spark); every
+non-secret has a local-stack default in code, so a minimal `.env` only needs the
+passwords.
 
 Start the stack:
 
@@ -112,15 +123,25 @@ jdbc:trino://localhost:8080/iceberg/bronze
 This section is only for the sandbox; do not run it against a production Oracle
 database.
 
-1. In DBeaver's Oracle editor, run
-   [create_account_table.sql](init-scripts/create_account_table.sql) with
-   **Execute SQL Script**.
-2. Optionally run
-   [seed_account_xml_bulk.sql](init-scripts/seed_account_xml_bulk.sql) with
-   **Execute SQL Script** to add 10,000 deterministic XML records.
+On a **fresh** database (first `docker compose up`, or after `down -v`),
+[init-scripts/00_setup.sh](init-scripts/00_setup.sh) runs automatically inside
+the Oracle container. Using the `ORACLE_SCHEMA` / `ORACLE_SCHEMA_PASSWORD` /
+`ORACLE_APP_USER` values from `.env`, it:
 
-The bulk seed skips its previously generated identifiers. Change
-`rows_to_insert` in that script to change the local fixture size.
+1. creates `ORACLE_SCHEMA` (owner of the source tables) and, if it is not
+   `system`, `ORACLE_APP_USER` too;
+2. runs [create_account_table.sql](init-scripts/create_account_table.sql) then
+   [seed_account_xml_bulk.sql](init-scripts/seed_account_xml_bulk.sql) **as
+   `ORACLE_SCHEMA`**, so `ACCOUNT` (+ 10,000 deterministic XML rows) lands in it;
+3. `GRANT SELECT` on those tables to `PUBLIC` so any user can read them.
+
+Watch it run with `docker compose logs -f oracle-xe` (look for `[00_setup]`).
+To re-run it, recreate the DB: `docker compose down -v && docker compose up -d`.
+
+**Manual alternative:** run the two `.sql` files yourself in DBeaver with
+**Execute SQL Script**, connected as the `ORACLE_SCHEMA` user. Change
+`rows_to_insert` in the seed to change the fixture size; it skips identifiers
+it already generated.
 
 ## Build and query the Iceberg model
 
@@ -190,8 +211,9 @@ docker compose down -v
 
 ```text
 init-scripts/
-  create_account_table.sql             Local Oracle XMLTYPE fixture
-  seed_account_xml_bulk.sql            Optional local bulk fixture
+  00_setup.sh                          Auto-run on fresh DB: makes ORACLE_SCHEMA, loads fixture, grants
+  create_account_table.sql             Local Oracle XMLTYPE fixture (unqualified)
+  seed_account_xml_bulk.sql            Local bulk fixture (10k rows)
 trino_parsing/
   gen_sql.py                           Generates the Trino SQL below (frozen reference)
   sql/account/                         Checked-in generated SQL, run in DBeaver

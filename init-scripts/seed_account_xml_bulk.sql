@@ -1,8 +1,8 @@
 -- Bulk-seed ACCOUNT with XMLTYPE rows cloned from the existing sample record.
 --
--- First run create_account_table.sql in DBeaver using Execute SQL Script (Alt+X).
--- Then run this script using the same command. It contains only SQL statements:
--- no SQL*Plus slash delimiter and no anonymous PL/SQL block.
+-- Runs after create_account_table.sql, as the same user (auto: 00_setup.sh as
+-- ${ORACLE_SCHEMA}; manual: your DBeaver Oracle connection, Execute SQL Script).
+-- Only plain SQL statements -- no SQL*Plus slash delimiter, no PL/SQL block.
 -- Change rows_to_insert in the constants CTE to control the generated volume.
 
 INSERT INTO account (recid, xmlrecord, currency)

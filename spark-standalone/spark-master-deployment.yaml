@@ -1,0 +1,40 @@
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+  name: spark-master
+  namespace: sia-team
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      component: spark-master
+  template:
+    metadata:
+      labels:
+        component: spark-master
+    spec:
+      imagePullSecrets:
+        - name: dockerhub-secret
+      serviceAccountName: spark-standalone-sa
+      containers:
+        - name: spark-master
+          image: bitnami/spark:3.5.1
+          env:
+            - name: SPARK_MODE
+              value: "master"
+            - name: SPARK_MASTER_HOST
+              value: "0.0.0.0"
+            - name: SPARK_MASTER_PORT
+              value: "7077"
+          ports:
+            - name: spark-master
+              containerPort: 7077
+            - name: spark-ui
+              containerPort: 8080
+          resources:
+            requests:
+              cpu: 300m
+              memory: 512Mi
+            limits:
+              cpu: 500m
+              memory: 1Gi

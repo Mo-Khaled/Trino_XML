@@ -1,0 +1,30 @@
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: spark-worker-0
+  namespace: sia-team
+spec:
+  host: spark-worker-0.apps.scbocpuat.scb.local
+  to:
+    kind: Service
+    name: spark-worker-controller-0
+  port:
+    targetPort: 8081
+  tls:
+    termination: edge
+
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: spark-worker-1
+  namespace: sia-team
+spec:
+  host: spark-worker-1.apps.scbocpuat.scb.local
+  to:
+    kind: Service
+    name: spark-worker-controller-1
+  port:
+    targetPort: 8081
+  tls:
+    termination: edge

@@ -105,9 +105,12 @@ $env:DBT_PROFILES_DIR = "."   # from this dbt/ directory
 dbt debug
 ```
 
-`profiles.yml` reads `TRINO_HOST`/`TRINO_PORT` via `env_var()`, defaulting to
-`localhost`/`8080` if unset. Those two vars live in the repo-root `.env` file
-(same file the Oracle/MinIO containers use) — no manual loading needed:
+`profiles.yml` reads `TRINO_HOST`/`TRINO_PORT` via `env_var()`, and
+`dbt_project.yml`'s `oracle_schema` var reads `ORACLE_SCHEMA` the same way
+(default `source_user`) — it names the Oracle schema the `*_raw` models read
+`FROM`, so it must match the owner the containers created. All three live in
+the repo-root `.env` file (same file the Oracle/MinIO containers use) — no
+manual loading needed:
 `dbt-core` depends on `python-dotenv` and auto-loads a `.env` file (searching
 upward from the current directory) on every invocation, the same way
 `docker compose` does for the containers, just via a different mechanism.

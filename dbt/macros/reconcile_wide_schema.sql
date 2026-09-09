@@ -1,26 +1,4 @@
-{#
-  dbt run-operation port of python_parsing.py's reconcile_iceberg_schema() /
-  _migrate_table_column() Step 3 (type-mismatch resolution) -- the only step
-  that needs real DDL. Deliberately NOT a model or a pre_hook -- see
-  dbt/README.md for why. Invoke with:
 
-    dbt run-operation reconcile_wide_schema --args '{table_name: account}'
-
-  immediately before `dbt run --select account_wide`. account_wide's own
-  get_column_shapes() macro trusts the PHYSICAL column types this leaves
-  behind -- it does not re-derive the widening decision itself.
-
-  Shapes only ever widen here (scalar -> array -> nested), mirroring
-  Spark's actual behavior: reconcile_iceberg_schema() only ever migrates
-  the TABLE when the batch is wider than it; the reverse ("table already
-  wider than what this batch needs") is handled by building the wider
-  expression anyway in get_wide_select.sql, the same way Spark's Cases D/E/F
-  cast the DataFrame up to match the table rather than narrowing the table.
-  Step 1 (columns in the table but missing from the batch/lookup) and Step 2
-  (new columns) aren't handled here -- Step 2 is dbt's own
-  on_schema_change='append_new_columns', and Step 1 is get_wide_select's
-  stale-column NULL-fill (get_stale_columns) -- neither needs DDL up front.
-#}
 
 {% macro reconcile_wide_schema(table_name) %}
   {% if not execute %}
@@ -42,8 +20,7 @@
     {{ return(none) }}
   {% endif %}
 
-  {#-- batch_shapes: what shape does TODAY's batch need, per lookup row?
-       Same detection get_column_shapes.sql's bootstrap branch uses. #}
+  {#-- batch_shapes: what shape does TODAY's batch need, per lookup row?   Same detection get_column_shapes.sql's bootstrap branch uses. #}
   {% set batch_shapes = {} %}
 
   {% set pinned_pairs = [] %}
