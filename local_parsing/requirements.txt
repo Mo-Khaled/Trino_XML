@@ -1,4 +1,2 @@
-# local_parsing/run_parsing.py  (see README.md)  -- plus a JDK 11 or 17
 pyspark==3.5.5          # matches the bank's spark-operator custom image (Spark 3.5.5 / Scala 2.12)
-python-oracledb>=2.4    # thin mode (no Instant Client) - the daily Oracle read
 python-dotenv>=1.0      # loads the repo-root .env (Oracle + MinIO secrets)

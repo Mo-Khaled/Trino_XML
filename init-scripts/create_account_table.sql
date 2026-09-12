@@ -1,22 +1,19 @@
--- Recreates ACCOUNT and inserts the source XML row the bulk seed clones from.
--- Objects are created UNQUALIFIED, so they land in whatever schema runs this:
---   * auto path  -- init-scripts/00_setup.sh runs it as ${ORACLE_SCHEMA}
---   * manual path -- connect to DBeaver as that same user, Execute SQL Script (Alt+X)
+-- sed "s/__SCHEMA__/source_table/g" init-scripts/create_account_table.sql | docker exec -i oracle-xe sqlplus -s -L source_table/source_table@localhost:1521/XEPDB1
+
 BEGIN
-  EXECUTE IMMEDIATE 'DROP TABLE account';
+  EXECUTE IMMEDIATE 'DROP TABLE __SCHEMA__.account';
 EXCEPTION
   WHEN OTHERS THEN
     IF SQLCODE != -942 THEN RAISE; END IF;
 END;
 /
 
-CREATE TABLE account (
+CREATE TABLE __SCHEMA__.account (
   recid      VARCHAR2(255) NOT NULL PRIMARY KEY,
-  xmlrecord  XMLTYPE,
-  currency   VARCHAR2(250)
+  xmlrecord  XMLTYPE
 );
 
-INSERT INTO account (recid, xmlrecord, currency)
+INSERT INTO __SCHEMA__.account (recid, xmlrecord)
 VALUES (
   '9000000112345001',
   XMLTYPE(TO_CLOB(q'~<row id="9000000112345001">
@@ -201,11 +198,10 @@ VALUES (
   <c252>EG0010039</c252>
   <c253>99</c253>
 </row>
-~'),
-  'EGP'
+~')
 );
 
 COMMIT;
 
 SELECT COUNT(*) AS account_row_count
-FROM account;
+FROM __SCHEMA__.account;

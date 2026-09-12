@@ -1,25 +1,7 @@
-#!/usr/bin/env bash
-# Auto-run ONCE by gvenzl/oracle-xe on a fresh database (this file is mounted
-# into /container-entrypoint-initdb.d by docker-compose.yml).
-#
-# Everything it needs comes from the container environment, which
-# docker-compose.yml feeds from the repo-root .env -- nothing is hard-coded:
-#
-#   ORACLE_SCHEMA           schema/user that OWNS the source tables (account, ...)
-#   ORACLE_SCHEMA_PASSWORD  password for that user
-#   ORACLE_APP_USER         identity Trino/Spark connect as; created here too
-#                           unless it is blank / SYS / SYSTEM
-#   ORACLE_APP_PASSWORD     password for that user
-#
-# What it does:
-#   1. create ORACLE_SCHEMA (owning user) if missing
-#   2. optionally create ORACLE_APP_USER (read-only consumer)
-#   3. run the fixture SQL *as ORACLE_SCHEMA* so every object lands in it
-#   4. GRANT SELECT on the fixture tables to PUBLIC so any user can read them
-#
-# The raw .sql fixtures are mounted read-only at /opt/fixtures and are NOT in
-# the init dir, so gvenzl does not run them itself (which would create the
-# tables under SYS).
+
+# This script sets up the Oracle database for the Trino XML project.
+# It creates the necessary users and tables, and seeds the data.
+
 set -euo pipefail
 
 SCHEMA="${ORACLE_SCHEMA:-source_table}"
@@ -63,13 +45,19 @@ END;
 /
 SQL
 
-# ── 3: fixture, as the owning schema so unqualified names land in it ──────────
-echo "[00_setup] loading fixture as ${SCHEMA}"
+# ── 3: fixture, schema-qualified via __SCHEMA__ substitution ──────────────────
+echo "[00_setup] loading fixture into schema ${SCHEMA}"
+RENDERED="$(mktemp -d)"
+trap 'rm -rf "${RENDERED}"' EXIT
+sed "s/__SCHEMA__/${SCHEMA}/g" "${FIXTURES}/create_account_table.sql" > "${RENDERED}/create_account_table.sql"
+sed "s/__SCHEMA__/${SCHEMA}/g" "${FIXTURES}/seed_account_xml_bulk.sql" > "${RENDERED}/seed_account_xml_bulk.sql"
+
 sqlplus -s -L "${SCHEMA}/${SCHEMA_PWD}@localhost:1521/${PDB}" <<SQL
 WHENEVER SQLERROR EXIT SQL.SQLCODE
 SET DEFINE OFF
-@${FIXTURES}/create_account_table.sql
-@${FIXTURES}/seed_account_xml_bulk.sql
+SET SQLBLANKLINES ON
+@${RENDERED}/create_account_table.sql
+@${RENDERED}/seed_account_xml_bulk.sql
 SQL
 
 # ── 4: let everyone read the source tables ───────────────────────────────────

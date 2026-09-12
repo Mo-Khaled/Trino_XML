@@ -1,9 +1,9 @@
-# trino_parsing — Trino-native T24 XML parsing
+# trino_parsing - Trino-native T24 XML parsing
 
 Parses T24 `XMLRECORD` blobs entirely in Trino (regex + array functions), instead
 of Oracle's native `XMLTABLE` (see `init-scripts/`) or PySpark (see
 `parsing/python_parsing.py`, the bank's production reference for the parsing
-semantics — `m` multi-values, `s` sub-values). Output lands in the lakehouse
+semantics - `m` multi-values, `s` sub-values). Output lands in the lakehouse
 **bronze** layer as an Iceberg table.
 
 `parsing/` is left untouched as reference/history. This
@@ -12,14 +12,14 @@ folder is the actual implementation.
 ## Why Trino instead of Oracle's XMLTABLE
 
 Oracle stays read-only and does no field-level work. The only thing Oracle
-does is serialize the XMLTYPE column to text via `getClobVal()` — a plain
+does is serialize the XMLTYPE column to text via `getClobVal()` - a plain
 `CLOB` conversion, not an XPath query. Every `c1`, `c2`, ... tag is parsed
 inside Trino, using the same regex-tokenize approach the rest of this
 pipeline is built around.
 
 ## How a table is generated
 
-`gen_sql.py` prints Trino SQL — it never connects to anything itself. Copy
+`gen_sql.py` prints Trino SQL - it never connects to anything itself. Copy
 the output into DBeaver's Trino editor (same manual-runbook model the rest
 of this repo uses; there is no orchestrator).
 
@@ -28,8 +28,8 @@ python gen_sql.py --mode <mode> --table account [flags] > out.sql
 ```
 
 Every mode is genuinely table-agnostic. Output is one row per
-`(recid, field_index, m_index, s_index)` — an EAV shape, not named business
-columns — so the generated SQL has a fixed 7-column shape no matter what any
+`(recid, field_index, m_index, s_index)` - an EAV shape, not named business
+columns - so the generated SQL has a fixed 7-column shape no matter what any
 lookup table contains. `--table` only ever changes a `WHERE` filter or a
 table-name substitution, never the SQL's shape. Business-field names are
 never read by Python at all: only `--mode reconcile` joins against
@@ -67,30 +67,30 @@ and only inside the generated SQL itself, at query time.
 ```
 
 `wide-incremental` windows its source scan by `account_attributes.ingested_at`
-— which `incremental` only ever bumps for recids it actually changed — so it
+- which `incremental` only ever bumps for recids it actually changed - so it
 never has to re-pivot the whole table. Like `incremental`, the window is an
 optimization on what gets re-pivoted, not the correctness check: comparing
 `xml_hash` against what's already in `<table>_wide` is what actually decides
 which recids get replaced, so using the same window as the `incremental` run
 that fed it (or a wider one) is required, but getting it slightly wide is
-harmless — only genuinely different recids ever get touched.
+harmless - only genuinely different recids ever get touched.
 
 ### Schema drift: a field that starts carrying real `s` sub-values
 
 `gen_sql.py --mode wide`/`wide-incremental` always pivot a lookup-pinned
-`(field_index, m_index)` as a single scalar value — that's fine until T24
+`(field_index, m_index)` as a single scalar value - that's fine until T24
 starts sending more than one `s` value for a position that used to only ever
 have one (e.g. `c11`/`m=1` had a single value for the first 10 batches, then
 batch 11 has two). At that point the column genuinely needs to become
 `ARRAY(VARCHAR)`, and the existing table's column has to be widened in
-place — this is the Trino port of `python_parsing.py`'s
+place - this is the Trino port of `python_parsing.py`'s
 `reconcile_iceberg_schema()`/`_migrate_table_column()`.
 
 This can't be done from generated SQL text the way every other mode works,
 for the same reason Spark's version isn't a static query either: the
-decision (does this column need widening?) depends on live state — what
+decision (does this column need widening?) depends on live state - what
 today's batch actually contains, and what the table's column type currently
-is — inspected and acted on at run time. `trino_parsing/reconcile_wide_schema.py`
+is - inspected and acted on at run time. `trino_parsing/reconcile_wide_schema.py`
 is a live-connected script (needs `pip install trino`) instead of a text
 generator, run in place of `gen_sql.py --mode wide`/`wide-incremental`:
 
@@ -107,12 +107,12 @@ add/copy/drop/rename sequence to widen it to `ARRAY(VARCHAR)` (mirrors
 `_migrate_table_column`); then runs the pivot itself, building an ordered
 array from every `s` value for columns that need it and a plain scalar
 lookup for everything else. Only two shapes are possible here (`VARCHAR` or
-`ARRAY(VARCHAR)`), not Spark's three — every lookup row in this project is
+`ARRAY(VARCHAR)`), not Spark's three - every lookup row in this project is
 already pinned to one `m` (see `load_lookup_csv`), so there's no
 unpinned-`m` `ARRAY(ARRAY(VARCHAR))` case to begin with.
 
 Verified live: seeded a synthetic record with two `s` values for a
-previously-always-scalar field, ran `--apply incremental` — the column
+previously-always-scalar field, ran `--apply incremental` - the column
 correctly migrated (`VARCHAR -> ARRAY(VARCHAR)`), the existing 10,001
 records' prior scalar values came through safely wrapped as single-element
 arrays (e.g. `[111]`, not lost or nulled), and the new record's two values
@@ -126,7 +126,7 @@ pipeline have been removed; this pipeline's tables (`account_raw`,
 
 There is no `discover` step and no `--fields-with-s` flag. Those existed
 only to decide, ahead of generation, between two possible column shapes for
-a field with no pinned `m_index` — a decision the old wide-named-column
+a field with no pinned `m_index` - a decision the old wide-named-column
 design was forced to make because SQL fixes a column's type when the query
 is written. The EAV shape has no such decision: every value's `m_index` and
 `s_index` are stored as plain data, for every field, unconditionally.
@@ -175,28 +175,29 @@ and only as a live SQL join (`--lookup-table`), filtered by
 ### Oracle connector user vs. schema owner
 
 `ORACLE_APP_USER`/`ORACLE_APP_PASSWORD` in `.env` (used by both Trino's
-Oracle connector and DBeaver) is currently `system` — Oracle's built-in
-admin account, not `source_user`, the schema that actually owns `ACCOUNT`
+Oracle connector and DBeaver) is currently `system` - Oracle's built-in
+admin account, not `source_table`, the schema that actually owns `ACCOUNT`
 and every other source table (named for what it is: the account that owns
 the *source* data, not a lakehouse-layer name like the old `bronze_user`).
 Since `system` isn't the owner, every `oracle.system.query(...)` passthrough
-must schema-qualify table references (`source_user.account`, not bare
+must schema-qualify table references (`source_table.account`, not bare
 `account`) or Oracle returns `ORA-00942: table or view does not exist`.
 
 `gen_sql.py` handles this by default: `--oracle-schema` (default
-`source_user`) is prefixed onto `--table` to build the Oracle-side
+`source_table`) is prefixed onto `--table` to build the Oracle-side
 reference, so generated SQL is qualified automatically regardless of which
 user the connector runs as. Override `--oracle-table` directly if a
 specific table lives in a different schema. The two hand-written
-`init-scripts/*.sql` files were updated to match
-(`FROM source_user.account a`) — if `ORACLE_APP_USER` ever changes back to
-`source_user` itself, the qualification is harmless (a user can always
-schema-qualify its own tables), so this doesn't need to be conditional on
-which user is configured.
+`init-scripts/*.sql` fixtures qualify the same way, via a `__SCHEMA__`
+placeholder substituted with `ORACLE_SCHEMA` at run time rather than a
+hard-coded name - if `ORACLE_APP_USER` ever changes back to `source_table`
+itself, the qualification is harmless (a user can always schema-qualify its
+own tables), so this doesn't need to be conditional on which user is
+configured.
 
 ## Output shape
 
-`iceberg.bronze.<table>_attributes` — one row per `(recid, field_index,
+`iceberg.bronze.<table>_attributes` - one row per `(recid, field_index,
 m_index, s_index)`:
 
 | column | meaning |
@@ -209,15 +210,15 @@ m_index, s_index)`:
 | `xml_hash` | `md5` of the record's raw XML (see "Change detection") |
 | `ingested_at` | when this row was written |
 
-Every XML element is tokenized once into `(tag, m, s, val)` — defaulting a
+Every XML element is tokenized once into `(tag, m, s, val)` - defaulting a
 missing `m`/`s` attribute to `1` (T24 omits it for the first occurrence:
 `<c20>` then `<c20 m="2">`, never `<c20 m="1">`) means nothing downstream
 needs to special-case an absent attribute. `c0` is special-cased to `recid`
-— it's the `<row id="...">` attribute, not a real XML element, so it never
+- it's the `<row id="...">` attribute, not a real XML element, so it never
 appears as a `field_index`.
 
 This preserves the full information `python_parsing.py`'s `_VALUE`/`_m`/`_s`
-struct captures per element — nothing about `m` or `s` is discarded or
+struct captures per element - nothing about `m` or `s` is discarded or
 collapsed. What's different from that file's output is the *shape*: named
 business columns there, generic attribute rows here. Turning
 `field_index = 'c20' AND m_index = 18` into a column named `ac_amt_loc` is a
@@ -262,7 +263,7 @@ Trino 483 + Iceberg REST + MinIO), not just generated and eyeballed:
 
 - **Self-closing tags are real, not hypothetical.** The original fixture SQL
   writes empty fields as `<c100></c100>`, but Oracle's `XMLTYPE` serializer
-  canonicalizes empty elements to self-closing form on `getClobVal()` —
+  canonicalizes empty elements to self-closing form on `getClobVal()` -
   confirmed via a live round-trip, where it came back as `<c100/>`. The
   original tag regex cannot match that shape (`...>value</cNN>` requires an
   explicit close), which the token-completeness check in
@@ -282,7 +283,7 @@ Trino 483 + Iceberg REST + MinIO), not just generated and eyeballed:
 - **A genuine Trino 483 planner bug**: `NULLIF(...)` used as a field inside a
   `ROW(...)` constructor inside a `transform(...)` lambda fails with
   `class io.trino.sql.ir.Bind cannot be cast to class io.trino.sql.ir.Lambda`
-  — reproduced with a minimal literal-array query with no table involved, so
+  - reproduced with a minimal literal-array query with no table involved, so
   it's not specific to this pipeline's data or CTE shape. Worked around with
   an equivalent `CASE WHEN v = '' THEN NULL ELSE v END` (see `blank_to_null()`
   in `gen_sql.py`), which does not trigger it.
@@ -292,7 +293,7 @@ Trino 483 + Iceberg REST + MinIO), not just generated and eyeballed:
   exactly.
 - **Incremental correctness and isolation**: mutated one field
   (`c11: 999 -> 777`) directly in Oracle, ran `ingest-refresh`
-  (`MERGE: 1 row`) then `incremental` — `changed_records: 1`,
+  (`MERGE: 1 row`) then `incremental` - `changed_records: 1`,
   `DELETE: 165 rows` / `INSERT: 165 rows` (that one record's full attribute
   set), total table row count unchanged at 1,650,165, and the new value
   confirmed in place. The other 10,000 records' 1,650,000 rows were not
@@ -310,7 +311,7 @@ Trino 483 + Iceberg REST + MinIO), not just generated and eyeballed:
     was too low to serialize all 10,000 `XMLTYPE` documents in one
     `oracle.system.query` passthrough (`ORA-04036`). Raised to 4G via
     `ALTER SYSTEM SET pga_aggregate_limit=4G SCOPE=BOTH` connected to the
-    CDB root (`sqlplus sys/...@//host:1521/XE`, not the `XEPDB1` service —
+    CDB root (`sqlplus sys/...@//host:1521/XE`, not the `XEPDB1` service -
     a PDB-level `ALTER SYSTEM` is capped by the root's limit and will error).
     This is an Oracle XE resource default, not a query design problem; a
     properly-sized Oracle instance shouldn't need this, but it's worth
@@ -318,12 +319,12 @@ Trino 483 + Iceberg REST + MinIO), not just generated and eyeballed:
 
 ## Known risks / things to verify against real production data
 
-- **`s` sub-values are unverified locally** — `s="N"` does not appear
+- **`s` sub-values are unverified locally** - `s="N"` does not appear
   anywhere in the local fixture or 10k-row bulk seed, only in
   `parsing/README.md`'s illustrative example. The EAV design stores
   `s_index` unconditionally for every value, so there's no separate code
   path that specifically needs testing the way the old design's nested-array
-  branch did — but no real document exercising `s > 1` has actually been
+  branch did - but no real document exercising `s > 1` has actually been
   run through this pipeline yet.
 - **CLOB truncation** on documents much larger than this fixture's ~4.3KB:
   the truncation check has been run against every row of the 10k-row seed

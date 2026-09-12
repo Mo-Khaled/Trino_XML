@@ -16,7 +16,7 @@ FROM TABLE(
     query => 'SELECT
       a.recid,
       a.xmlrecord.getClobVal() AS xmlrecord
-    FROM source_user.account a
+    FROM source_table.account a
     WHERE XMLCAST(
       XMLQUERY(''/row/c167/text()'' PASSING a.xmlrecord RETURNING CONTENT)
       AS VARCHAR2(8)
@@ -34,3 +34,4 @@ WHEN NOT MATCHED THEN INSERT (recid, xmlrecord, ingested_at)
 VALUES (s.recid, s.xmlrecord, s.ingested_at);
 
 DROP TABLE IF EXISTS iceberg.bronze.account_raw_stage;
+

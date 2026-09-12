@@ -587,7 +587,7 @@ def main():
     ap.add_argument("--table", default="account",
                     help="table_name filter -- the only thing that changes "
                          "between tables for every mode")
-    ap.add_argument("--oracle-schema", default="source_user",
+    ap.add_argument("--oracle-schema", default="source_table",
                     help="Oracle schema that owns the source tables -- the "
                          "connector user (ORACLE_APP_USER) need not be this "
                          "schema's owner, so table references are always "

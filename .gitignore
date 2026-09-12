@@ -45,6 +45,9 @@ local_parsing/spark-warehouse/
 local_parsing/metastore_db/
 local_parsing/derby.log
 
+local_parsing/.jdk/
+local_parsing/.venv/
+
 # Operating-system files
 Thumbs.db
 .DS_Store

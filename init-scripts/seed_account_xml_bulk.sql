@@ -1,11 +1,6 @@
--- Bulk-seed ACCOUNT with XMLTYPE rows cloned from the existing sample record.
---
--- Runs after create_account_table.sql, as the same user (auto: 00_setup.sh as
--- ${ORACLE_SCHEMA}; manual: your DBeaver Oracle connection, Execute SQL Script).
--- Only plain SQL statements -- no SQL*Plus slash delimiter, no PL/SQL block.
--- Change rows_to_insert in the constants CTE to control the generated volume.
+--   sed "s/__SCHEMA__/source_table/g" init-scripts/seed_account_xml_bulk.sql | docker exec -i oracle-xe sqlplus -s -L source_table/source_table@localhost:1521/XEPDB1
 
-INSERT INTO account (recid, xmlrecord, currency)
+INSERT INTO __SCHEMA__.account (recid, xmlrecord)
 WITH
   constants AS (
     SELECT
@@ -92,7 +87,7 @@ WITH
   ),
   source_row AS (
     SELECT a.xmlrecord, c.source_recid
-    FROM account a
+    FROM __SCHEMA__.account a
     CROSS JOIN constants c
     WHERE a.recid = c.source_recid
   ),
@@ -113,19 +108,13 @@ SELECT
       'id="' || s.source_recid || '"',
       'id="' || g.recid || '"'
     )
-  ).transform(x.xslt),
-  CASE SUBSTR(g.recid, -1)
-    WHEN '1' THEN 'USD'
-    WHEN '2' THEN 'EUR'
-    WHEN '3' THEN 'GBP'
-    ELSE 'EGP'
-  END
+  ).transform(x.xslt)
 FROM source_row s
 CROSS JOIN generated_rows g
 CROSS JOIN stylesheet x
 WHERE NOT EXISTS (
   SELECT 1
-  FROM account existing_account
+  FROM __SCHEMA__.account existing_account
   WHERE existing_account.recid = g.recid
 );
 

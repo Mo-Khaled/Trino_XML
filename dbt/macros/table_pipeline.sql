@@ -11,8 +11,10 @@
   {{ exceptions.raise_compiler_error("start_date and end_date vars must be given together") }}
 {%- endif -%}
 
+{%- set target_exists = is_incremental() -%}
+
 {%- set where_clause -%}
-{%- if start_date -%}
+{%- if target_exists and start_date -%}
     WHERE XMLCAST(
       XMLQUERY(''/row/{{ watermark_field }}/text()'' PASSING a.xmlrecord RETURNING CONTENT)
       AS VARCHAR2(8)
@@ -48,7 +50,7 @@ FROM TABLE(
 {%- set target_exists = is_incremental() -%}
 
 {%- set raw_relation = ref(table_name ~ '_raw') -%}
-{%- if start_date -%}
+{%- if target_exists and start_date -%}
   {%- set source_relation -%}
     (SELECT * FROM {{ raw_relation }}
      WHERE ingested_at >= date_parse('{{ start_date }}', '%Y%m%d')

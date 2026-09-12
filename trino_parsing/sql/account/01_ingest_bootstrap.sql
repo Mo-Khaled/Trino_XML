@@ -19,7 +19,7 @@ FROM TABLE(
     query => 'SELECT
       a.recid,
       a.xmlrecord.getClobVal() AS xmlrecord
-    FROM source_user.account a'
+    FROM source_table.account a'
   )
 );
 
@@ -34,7 +34,7 @@ oracle_lengths AS (
   FROM TABLE(
     oracle.system.query(
       query => 'SELECT a.recid, CAST(dbms_lob.getlength(a.xmlrecord.getclobval()) AS NUMBER(10)) AS oracle_length
-      FROM source_user.account a'
+      FROM source_table.account a'
     )
   )
 )
@@ -54,3 +54,4 @@ SELECT
   ))) AS matched_tags,
   sum(cardinality(regexp_extract_all(xmlrecord, '<c\d+[ />]'))) AS raw_tag_opens
 FROM iceberg.bronze.account_raw;
+

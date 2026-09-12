@@ -4,7 +4,7 @@ This repository is a local Docker reference for reading T24-style Oracle
 `XMLTYPE` account records and publishing an Iceberg reporting model in Trino.
 
 Oracle is read-only during ingestion. XML parsing happens entirely in Trino
-(regex + array functions), run as a dbt project — see
+(regex + array functions), run as a dbt project - see
 [dbt/README.md](dbt/README.md) for the actual pipeline: `dbt run` /
 `dbt run-operation` / `dbt test`, and the querying/troubleshooting details
 specific to it. [trino_parsing/README.md](trino_parsing/README.md) documents
@@ -14,7 +14,7 @@ the dbt project is a 1:1 port of.
 ## Architecture
 
 ```text
-Oracle ACCOUNT (RECID, CURRENCY, XMLTYPE)
+Oracle ACCOUNT (RECID, XMLTYPE)
         |
         | getClobVal() passthrough -- Oracle does no field-level work
         v
@@ -27,7 +27,7 @@ Trino (regex-tokenizes the XML text) -> Iceberg REST catalog + MinIO
 ```
 
 `init-scripts/` only sets up the local Oracle fixture (`ACCOUNT` table +
-sample data) — it does not write anything to Iceberg. The actual XML-parsing
+sample data) - it does not write anything to Iceberg. The actual XML-parsing
 pipeline, including how these tables are generated and kept up to date, lives
 in `dbt/` (current) and `trino_parsing/` (semantics reference / frozen SQL
 this was ported from).
@@ -43,16 +43,16 @@ this was ported from).
 
 ## Prerequisites
 
-- Docker Desktop with Docker Compose.
+- Docker Engine with the Compose plugin (`docker compose`).
 - DBeaver with Oracle and Trino drivers.
-- PowerShell for the Docker commands.
+- A bash shell for the commands below.
 
 ## Configure and start
 
 Copy the template, then replace every placeholder with local credentials:
 
-```powershell
-Copy-Item .env.example .env
+```bash
+cp .env.example .env
 ```
 
 | Variable | Used by |
@@ -64,11 +64,11 @@ Copy-Item .env.example .env
 | `ORACLE_APP_PASSWORD` | Password for `ORACLE_APP_USER`. |
 | `MINIO_ROOT_USER` | MinIO, Iceberg REST, and Trino Iceberg connector. |
 | `MINIO_ROOT_PASSWORD` | MinIO, Iceberg REST, and Trino Iceberg connector. |
-| `ICEBERG_CATALOG_DB_*` | Optional — Postgres backing the Iceberg REST catalog (defaults `iceberg`/`iceberg`/`iceberg_catalog`). |
+| `ICEBERG_CATALOG_DB_*` | Optional - Postgres backing the Iceberg REST catalog (defaults `iceberg`/`iceberg`/`iceberg_catalog`). |
 | `TRINO_HOST` / `TRINO_PORT` | dbt's Trino connection (host-side). |
-| `ORACLE_HOST` / `ORACLE_PORT` / `ORACLE_SERVICE`, `ICEBERG_REST_URI`, `ICEBERG_WAREHOUSE`, `MINIO_ENDPOINT`, `AWS_REGION` | Endpoints — default to the local stack; override for another environment. Read by dbt and `local_parsing/`. |
-| `SPARK_LOCAL_IP`, `PYSPARK_SUBMIT_ARGS` | `local_parsing/` local-run conveniences (both jobs) — driver address + heap; `run_parsing.py` drops them for a cluster. |
-| `SPARK_MASTER`, `SPARK_EXECUTOR_*`, `SPARK_JDBC_NUM_PARTITIONS` | `local_parsing/`'s **HISTORY** backfill job only — cluster address + sizing. See [local_parsing/README.md](local_parsing/README.md). |
+| `ORACLE_HOST` / `ORACLE_PORT` / `ORACLE_SERVICE`, `ICEBERG_REST_URI`, `ICEBERG_WAREHOUSE`, `MINIO_ENDPOINT`, `AWS_REGION` | Endpoints - default to the local stack; override for another environment. Read by dbt and `local_parsing/`. |
+| `SPARK_LOCAL_IP`, `PYSPARK_SUBMIT_ARGS` | `local_parsing/` local-run conveniences - driver address + heap. Both `daily` and `history` run on this one machine (`local[2]`/`local[*]`), no cluster wiring. |
+| `SPARK_JDBC_NUM_PARTITIONS` | `local_parsing/`'s **HISTORY** backfill job only - local read parallelism. See [local_parsing/README.md](local_parsing/README.md). |
 
 `.env` is grouped into sections (Oracle / object store / dbt / Spark); every
 non-secret has a local-stack default in code, so a minimal `.env` only needs the
@@ -76,14 +76,14 @@ passwords.
 
 Start the stack:
 
-```powershell
+```bash
 docker compose up -d
 docker compose ps
 ```
 
 If Oracle is still starting, follow its logs until it is ready:
 
-```powershell
+```bash
 docker compose logs -f oracle-xe
 ```
 
@@ -146,7 +146,7 @@ it already generated.
 ## Build and query the Iceberg model
 
 The pipeline (`dbt run` / `dbt run-operation` / `dbt test`), how to run it,
-and example queries all live in [dbt/README.md](dbt/README.md) — that
+and example queries all live in [dbt/README.md](dbt/README.md) - that
 document is the source of truth for the actual data pipeline; this file
 only covers getting the local Docker stack running.
 
@@ -164,7 +164,7 @@ only covers getting the local Docker stack running.
 
 Check stack configuration and logs:
 
-```powershell
+```bash
 docker compose config
 docker compose ps
 docker compose logs trino
@@ -183,27 +183,27 @@ SHOW TABLES FROM iceberg.bronze;
 
 If the catalog services are running but Trino cannot connect, restart Trino:
 
-```powershell
+```bash
 docker compose restart trino
 ```
 
 For XML extraction failures, verify the Oracle account user can read `ACCOUNT`
 and each XML document has a `<row>` root element. XML parsing happens in
-Trino itself via `getClobVal()` + regex tokenizing, not Oracle `XMLTABLE` —
+Trino itself via `getClobVal()` + regex tokenizing, not Oracle `XMLTABLE` -
 see `trino_parsing/README.md`.
 
 ## Stop or reset
 
 Stop services but keep local Oracle and MinIO data:
 
-```powershell
+```bash
 docker compose down
 ```
 
 Remove containers and named volumes, including all local Oracle and Iceberg
 data:
 
-```powershell
+```bash
 docker compose down -v
 ```
 
@@ -212,7 +212,7 @@ docker compose down -v
 ```text
 init-scripts/
   00_setup.sh                          Auto-run on fresh DB: makes ORACLE_SCHEMA, loads fixture, grants
-  create_account_table.sql             Local Oracle XMLTYPE fixture (unqualified)
+  create_account_table.sql             Local Oracle XMLTYPE fixture (schema-qualified via __SCHEMA__)
   seed_account_xml_bulk.sql            Local bulk fixture (10k rows)
 trino_parsing/
   gen_sql.py                           Generates the Trino SQL below (frozen reference)
