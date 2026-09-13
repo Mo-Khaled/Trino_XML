@@ -1,15 +1,14 @@
-
 {% macro unescape_expr(inner) %}
-{%- set entities = [
-    ("&lt;", "<"), ("&gt;", ">"), ("&quot;", '"'),
-    ("&apos;", "'"), ("&#39;", "'"), ("&amp;", "&")
-] -%}
-{%- set ns = namespace(e=inner) -%}
-{%- for ent, ch in entities -%}
-  {%- set lit = ch.replace("'", "''") -%}
-  {%- set ns.e = "replace(" ~ ns.e ~ ", '" ~ ent ~ "', '" ~ lit ~ "')" -%}
-{%- endfor -%}
-{{- ns.e -}}
+  {%- set sq = "'" -%}
+  {%- set dq = '"' -%}
+  {%- set e = inner -%}
+  {%- set e = "replace(" ~ e ~ ", '&lt;', '<')" -%}
+  {%- set e = "replace(" ~ e ~ ", '&gt;', '>')" -%}
+  {%- set e = "replace(" ~ e ~ ", '&quot;', '" ~ dq ~ "')" -%}
+  {%- set e = "replace(" ~ e ~ ", '&apos;', '" ~ sq ~ sq ~ "')" -%}
+  {%- set e = "replace(" ~ e ~ ", '&#39;', '" ~ sq ~ sq ~ "')" -%}
+  {%- set e = "replace(" ~ e ~ ", '&amp;', '&')" -%}
+  {{- e -}}
 {%- endmacro %}
 
 

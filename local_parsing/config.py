@@ -143,9 +143,11 @@ _history_conf = {
     "spark.master": "local[*]",
     "spark.sql.catalogImplementation": "in-memory",             # skip Hive metastore / Derby init
     "spark.ui.enabled": "true",
-    "spark.sql.shuffle.partitions": "200",
+    "spark.sql.shuffle.partitions": "50",
     "spark.sql.adaptive.enabled": "true",
     "spark.sql.adaptive.coalescePartitions.enabled": "true",
+    # Set the advisory partition size to 128MB
+    "spark.sql.adaptive.advisoryPartitionSizeInBytes": "134217728",
     # See DAILY's identical setting: Iceberg's vectorized Arrow reader
     # crashes the JVM reading a merge-on-read table's delete files.
     "spark.sql.iceberg.vectorization.enabled": "false",
